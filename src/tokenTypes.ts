@@ -68,6 +68,7 @@ function keyword(name: string, options: Config = {}) {
 
 const tokenTypes = {
   //identifier
+  string: new TokenType("string", { startsExpr }),
   num: new TokenType("number", { startsExpr }),
   name: new TokenType("name", { startsExpr }),
   eof: new TokenType("eof"),

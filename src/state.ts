@@ -30,7 +30,12 @@ import {
   getTokenFromCode,
   readNumber,
   readToken_dot,
-  readRadixNumber
+  readRadixNumber,
+  readEscapeString,
+  readString,
+  readRegexp,
+  readToken_slash,
+  finishOp
 } from "./tokenize";
 
 export type ParserOptions = {
@@ -123,6 +128,11 @@ class Parser {
   readNumber = readNumber;
   readToken_dot = readToken_dot;
   readRadixNumber = readRadixNumber;
+  readEscapeString = readEscapeString;
+  readString = readString;
+  readToken_slash = readToken_slash;
+  readRegexp = readRegexp;
+  finishOp = finishOp;
   charCodeAt(pos = this.pos) {
     return this.input.charCodeAt(pos);
   }

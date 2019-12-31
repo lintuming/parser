@@ -6,7 +6,7 @@ import {
   keywords as keywordToks
 } from "./tokenTypes";
 import { isIdentifierStart, isIdentifierCont, keywords } from "./identifier";
-import { nonASCIIwhitespace, lineBreakGlobal } from "./whiteSpace";
+import { nonASCIIwhitespace, lineBreakGlobal, isNewLine } from "./whiteSpace";
 
 function codePointToString(code: number) {
   if (code <= 0xffff) return String.fromCharCode(code);
@@ -266,12 +266,36 @@ function getTokenFromCode(this: Parser, code: number) {
     case 34:
     case 39:
       return this.readString(code);
+
+    case 47:
+      return this.readToken_slash();
     default:
       this.raiseError(
         this.pos,
         "Unexpected character '" + codePointToString(code) + "'"
       );
   }
+}
+function readToken_slash(this: Parser) {
+  const next = this.charCodeAt(this.pos + 1);
+  if (this.exprAllowed) {
+    ++this.pos;
+    return this.readRegexp();
+  }
+  // /=
+  if (next === 61) {
+    return this.finishOp(t.assign, 2);
+  }
+  return this.finishOp(t.slash, 1);
+}
+
+function readRegexp(this:Parser){
+  
+}
+function finishOp(this: Parser, type: TokenType, size: number) {
+  let str = this.input.substr(this.pos, size);
+  this.pos += size;
+  return this.finishToken(type, str);
 }
 function readString(this: Parser, quote: number) {
   let out = "";
@@ -283,11 +307,82 @@ function readString(this: Parser, quote: number) {
     // "\" escape
     if (cc === 92) {
       out += this.input.slice(chunkStart, this.pos);
-      out += this.readEscapeString();
-      
+      out += this.readEscapeString(false);
+      chunkStart = this.pos;
+    } else {
+      if (isNewLine(cc, this.options.ecmaVersion >= 10)) {
+        this.raiseError(this.pos, "Undetermined string literal");
+      }
+      this.pos++;
     }
-    this.pos++;
     cc = this.charCodeAt();
+  }
+  out += this.input.slice(chunkStart, this.pos);
+  return this.finishToken(t.string, out);
+}
+function readEscapeString(this: Parser, isInTemplate: boolean) {
+  let cc = this.charCodeAt(++this.pos);
+  this.pos++;
+  //"n", "b", "t", "r", "f"
+  switch (cc) {
+    case 98:
+      return "\b";
+    case 102:
+      return "\f";
+    case 110:
+      return "\n";
+    case 116:
+      return "\t";
+    case 114:
+      return "\r";
+    case 117: {
+      const code = this.readCodePoint();
+      const str = codePointToString(code);
+      return str;
+    }
+    case 118: // 'v'
+      return codePointToString(11);
+    case 120:
+      return String.fromCharCode(this.readHexChar(2));
+    case 13:
+      if (this.charCodeAt() === 10) ++this.pos; // '\r\n'
+    case 10: // ' \n'
+      if (this.options.locations) {
+        this.lineStart = this.pos;
+        ++this.curLine;
+      }
+      return "";
+    default:
+      //https://mathiasbynens.be/notes/javascript-escapes#octal
+      if (cc >= 48 && cc <= 55) {
+        let octalStr = this.input.substr(this.pos - 1, 3).match(/^[0-7]+/)![0];
+        let octal = parseInt(octalStr, 8);
+        if (octal > 255) {
+          octalStr = octalStr.slice(0, -1);
+          octal = parseInt(octalStr, 8);
+        }
+        this.pos += octalStr.length - 1;
+        cc = this.charCodeAt();
+        if (
+          //only `\0` can escape in Template string
+          (octalStr !== "0" || cc === 56 || cc === 57) &&
+          (this.strict || isInTemplate)
+        ) {
+          this.raiseError(
+            this.pos - octalStr.length,
+            isInTemplate
+              ? "Octal escape sequences are not allowed in template strings."
+              : "Octal escape sequences are not allowed in strict mode."
+          );
+        }
+        return String.fromCharCode(octal);
+      }
+      if (isNewLine(cc)) {
+        // Unicode new line characters after \ get removed from output in both
+        // template literals and strings
+        return "";
+      }
+      return String.fromCharCode(cc);
   }
 }
 function readRadixNumber(this: Parser, radix: 2 | 8 | 16) {
@@ -450,8 +545,13 @@ export {
   readNumber,
   readToken_dot,
   readRadixNumber,
+  readEscapeString,
+  readRegexp,
+  readToken_slash,
+  readString,
   nextToken,
   getTokenFromCode,
   fullCharCodeAtPosition,
-  finishToken
+  finishToken,
+  finishOp,
 };
