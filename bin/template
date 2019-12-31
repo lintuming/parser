@@ -1,0 +1,17 @@
+const nonASCIIidentifierStartChars = "{{nonASCIIStart}}"
+const nonASCIIidentifierChars = "{{nonASCIICont}}"
+
+const nonASCIIidentifierStart = new RegExp("[" + nonASCIIidentifierStartChars + "]")
+const nonASCIIidentifier = new RegExp("[" + nonASCIIidentifierStartChars + nonASCIIidentifierChars + "]")
+
+
+const astralIdentifierStartCodes = {{astralStart}}
+
+const astralIdentifierCodes = {{astralCont}}
+
+export {
+  nonASCIIidentifierStart,
+  nonASCIIidentifier,
+  astralIdentifierStartCodes,
+  astralIdentifierCodes
+}
