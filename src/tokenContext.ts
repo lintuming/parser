@@ -1,5 +1,5 @@
 import Parser from "./state";
-
+import { tokenTypes as t, TokenType } from "./tokenTypes";
 class TokenContext {
   token: string;
   isExpr: boolean;
@@ -28,10 +28,27 @@ const ContextTypes = {
   quoteBlock: new TokenContext("${", true)
 };
 
-class Context {
-  initialContext() {
-    return [ContextTypes.blockStatement];
+function initialContext() {
+  return [ContextTypes.blockStatement];
+}
+function updateContext(this: Parser, prevType: TokenType) {
+  let update,
+    type = this.type;
+  //xx.xx
+  if (type.keyword && prevType === t.dot) this.exprAllowed = false;
+  else if ((update = type.updateContext)) {
+    update.call(this, prevType);
+  } else {
+    this.exprAllowed = type.beforeExpr;
   }
 }
-
-export { ContextTypes, TokenContext, Context };
+function curContext(this: Parser) {
+  return this.context[this.context.length - 1];
+}
+export {
+  ContextTypes,
+  TokenContext,
+  initialContext,
+  updateContext,
+  curContext
+};

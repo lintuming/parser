@@ -24,7 +24,6 @@ function search(arr, ch, starting) {
   }
   return -1;
 }
-console.log(start)
 function esc(code) {
   let hex = code.toString(16);
   return hex.length <= 2
@@ -57,12 +56,6 @@ function generate(chars) {
 let startData = generate(start),
   contData = generate(cont);
 
-let code = [
-  `    let nonASCIIidentifierStartChars = "${startData.nonASCII}"`,
-  `    let nonASCIIidentifierChars = "${contData.nonASCII}"`,
-  `    const astralIdentifierStartCodes = ${JSON.stringify(startData.astral)}`,
-  `    const astralIdentifierCodes = ${JSON.stringify(contData.astral)}`
-];
 
 const src = "../src/chars.ts";
 

@@ -1,11 +1,42 @@
-import { tokenTypes as t, TokenType } from "./tokenTypes";
+import {
+  tokenTypes as t,
+  TokenType,
+  keywords as keywordToks
+} from "./tokenTypes";
 import { Position, getLineInfo } from "./location";
-import { TokenContext, Context } from "./tokenContext";
+import {
+  TokenContext,
+  initialContext,
+  updateContext,
+  curContext
+} from "./tokenContext";
 import { nonASCIIwhitespace, lineBreakGlobal } from "./whiteSpace";
 import { ParseSyntaxError } from "./error";
+import { isIdentifierStart, isIdentifierCont, keywords } from "./identifier";
+import { keywordRegExp } from "./util";
+import {
+  skipLineComment,
+  skipBlockComment,
+  fullCharCodeAtPosition,
+  finishToken,
+  readWordImpl,
+  readWord,
+  skipSpace,
+  readToken,
+  readHexChar,
+  readInt,
+  readCodePoint,
+  nextToken,
+  getTokenFromCode,
+  readNumber,
+  readToken_dot,
+  readRadixNumber
+} from "./tokenize";
 
 export type ParserOptions = {
   locations?: boolean;
+  ecmaVersion: number;
+  sourceType: "module" | "script";
   onComment?: (
     block: boolean,
     text: string,
@@ -16,7 +47,7 @@ export type ParserOptions = {
   ) => any;
 };
 
-class Parser extends Context {
+class Parser {
   input: string;
   options: ParserOptions;
   pos: number;
@@ -36,12 +67,23 @@ class Parser extends Context {
   inFunction: boolean;
   inGenerator: boolean;
   labels: Array<string>;
-  value: null;
+  value?: any;
+  kws: RegExp;
+  strict: boolean;
+  containEsc: boolean;
   constructor(input: string, options: ParserOptions) {
-    super();
     this.input = input;
     this.options = options;
     this.pos = this.lineStart = 0;
+    this.kws = keywordRegExp(
+      keywords[
+        options.ecmaVersion >= 6
+          ? 6
+          : options.sourceType === "module"
+          ? "5module"
+          : 5
+      ]
+    );
     this.curLine = 1;
     this.type = t.eof;
     this.start = this.end = this.pos;
@@ -53,137 +95,49 @@ class Parser extends Context {
     this.inFunction = this.inGenerator = false;
     this.labels = [];
     this.value = null;
+    this.containEsc = false;
+    this.strict = this.options.sourceType === "module";
   }
+
+  //context
+  initialContext = initialContext;
+  updateContext = updateContext;
+  curContext = curContext;
+  //Tokenize
+  skipLineComment = skipLineComment;
+  skipBlockComment = skipBlockComment;
+  skipSpace = skipSpace;
+
+  fullCharCodeAtPosition = fullCharCodeAtPosition;
+
+  finishToken = finishToken;
+  nextToken = nextToken;
+  getTokenFromCode = getTokenFromCode;
+
+  readWord = readWord;
+  readWordImpl = readWordImpl;
+  readToken = readToken;
+  readHexChar = readHexChar;
+  readInt = readInt;
+  readCodePoint = readCodePoint;
+  readNumber = readNumber;
+  readToken_dot = readToken_dot;
+  readRadixNumber = readRadixNumber;
   charCodeAt(pos = this.pos) {
     return this.input.charCodeAt(pos);
   }
-
-  //Tokenize
-  skipSpace() {
-    while (this.pos < this.input.length) {
-      const cc = this.charCodeAt();
-      //" "
-      if (cc === 32) {
-        ++this.pos;
-      } else if (cc === 13) {
-        ++this.pos;
-        const next = this.charCodeAt();
-        if (next === 10) {
-          ++this.pos;
-        }
-        if (this.options.locations) {
-          this.curLine++;
-          this.lineStart = this.pos;
-        }
-      } else if ([10, 8232, 8233].some(c => cc === c)) {
-        ++this.pos;
-        if (this.options.locations) {
-          this.curLine++;
-          this.lineStart = this.pos;
-        }
-      } else if (cc > 8 && cc < 14) {
-        ++this.pos;
-      } else if (cc === 47) {
-        // "/"
-        const next = this.charCodeAt(this.pos + 1);
-        if (next === 42) {
-          // "*"
-          this.skipBlockComment();
-        } else if (next === 47) {
-          // "/"
-          this.skipLineComment(2);
-        } else {
-          break;
-        }
-      } else if (cc === 160) {
-        ++this.pos;
-      } else if (
-        cc >= 5760 &&
-        nonASCIIwhitespace.test(String.fromCharCode(cc))
-      ) {
-        ++this.pos;
-      } else {
-        break;
-      }
-    }
-  }
-  curContext() {
-    return this.context[this.context.length - 1];
-  }
-  nextToken() {
-    let curContext = this.curContext();
-    if (!curContext || !curContext.preserveSpace) this.skipSpace();
-    this.start = this.pos;
-    if (this.options.locations) {
-      this.startLoc = this.curPosition();
-    }
-    if (this.pos >= this.input.length) return this.finishToken(tt.eof);
-    if (curContext.override) return curContext.override(this);
-    else {
-      return this.readToken()
-    }
-  }
-  skipBlockComment() {
-    const startLoc = this.options.locations ? this.curPosition() : undefined;
-    const start = this.pos,
-      end = this.input.indexOf("*/", (this.pos += 2));
-    if (end === -1) {
-      this.raiseError(this.pos - 2, "Unterminated comment");
-    }
-    this.pos = end + 2;
-    if (this.options.locations) {
-      lineBreakGlobal.lastIndex = start;
-      let match;
-      while (
-        (match = lineBreakGlobal.exec(this.input)) &&
-        match.index < this.pos
-      ) {
-        ++this.curLine;
-        this.lineStart = match.index + match[0].length;
-      }
-    }
-    if (this.options.onComment) {
-      this.options.onComment(
-        true,
-        this.input.slice(start + 2, end),
-        start,
-        this.pos,
-        startLoc,
-        this.options.locations ? this.curPosition() : undefined
-      );
-    }
-  }
-  skipLineComment(skip: number) {
-    const start = this.pos;
-    const startLoc = this.options.locations ? this.curPosition() : undefined;
-    this.pos += skip;
-    while (
-      this.pos < this.input.length &&
-      [10, 13, 8232, 8233].some(code => code !== this.charCodeAt(this.pos))
-    ) {
-      this.pos++;
-    }
-    if (this.options.onComment) {
-      this.options.onComment(
-        false,
-        this.input.slice(start + skip, this.pos),
-        start,
-        this.pos,
-        startLoc,
-        this.options.locations ? this.curPosition() : undefined
-      );
-    }
-  }
-
   //Position
   curPosition() {
     return new Position(this.curLine, this.pos - this.lineStart);
   }
-  raiseError(pos: number, msg: string) {
+  raiseError(pos: number, msg: string): never {
     const loc = getLineInfo(this.input, pos);
     msg += `(${loc.line}:${loc.column})`;
     const e = new ParseSyntaxError(msg, pos, loc, this.pos);
     throw e;
+  }
+  unexpected(pos?: number) {
+    return this.raiseError(pos != null ? pos : this.start, "Unexpected Token");
   }
 }
 

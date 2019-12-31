@@ -67,6 +67,9 @@ function keyword(name: string, options: Config = {}) {
 //
 
 const tokenTypes = {
+  //identifier
+  num: new TokenType("number", { startsExpr }),
+  name: new TokenType("name", { startsExpr }),
   eof: new TokenType("eof"),
   regexp: new TokenType("regexp", {
     startsExpr
@@ -83,7 +86,7 @@ const tokenTypes = {
   }),
   parenR: new TokenType(")"),
   braceL: new TokenType("{", { startsExpr, beforeExpr }),
-  braceR: new TokenType("}", { startsExpr, beforeExpr }),
+  braceR: new TokenType("}"),
   colon: new TokenType(":", { beforeExpr }),
   semi: new TokenType(";", { beforeExpr }),
   comma: new TokenType(",", { beforeExpr }),
